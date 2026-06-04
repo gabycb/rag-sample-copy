@@ -69,42 +69,79 @@ graph TB
 
 ## Agent Behavior & Loop
 
-### Agent Execution Loop
+### Azure AI Foundry Agent Architecture
 
 ```mermaid
-graph LR
-    A["📥 Receive Question<br/>from User in Teams"] -->|Extract text & context| B["⚡ Optimize Query<br/>Rewrite for search<br/>Add session context"]
-    B -->|Last 5 conversations| C["🔎 Run Search<br/>Hybrid RAG Retrieval<br/>Semantic Re-ranking"]
-    C -->|Retrieved docs| D["🧠 Agent Thinks<br/>Synthesize answer<br/>Decide next action"]
-    D -->|Decision point| E{Check if<br/>tool needed}
-    E -->|Yes| F["🛠️ Tool Invocation<br/>read/write files<br/>access data sources<br/>summarize info"]
-    F -->|Result as context| D
-    E -->|No| G["📤 Return Answer<br/>to User in Teams"]
+graph TB
+    Input["📥 Question Received<br/>(from Bot Service)"]
     
-    H["💾 Session State<br/>Last 5 Q&A pairs<br/>Agent memory"]
-    H -.->|Load on new Q| B
-    H -.->|Update after A| A
+    SessionMgr["💾 Session State Manager<br/>Last 5 Conversations<br/>(Thread Context)"]
     
-    I["🚪 User Exits Session<br/>or Timeout"] -->|Reset state| J["🔄 Reset<br/>Clear conversation<br/>history & context"]
-    J -->|Fresh session| A
+    Agent["🤖 Microsoft Agent Framework<br/>(Persistent Agent)"]
     
-    style A fill:#00a4ef
-    style B fill:#f39c12
-    style C fill:#9b59b6
-    style D fill:#e74c3c
-    style E fill:#e67e22
-    style F fill:#16a085
-    style G fill:#00a4ef
-    style H fill:#c0392b
-    style I fill:#95a5a6
-    style J fill:#34495e
+    LLM["🧠 Azure OpenAI Service<br/>(GPT-4o LLM Model<br/>Tool Decision Engine)"]
+    
+    Tools["🛠️ Custom Tools<br/>(Built by Customer)<br/>- Read/Write Files<br/>- Access Data Sources<br/>- Summarize Content"]
+    
+    Search["🔍 Azure AI Search<br/>(Knowledge Connection)<br/>Hybrid RAG + Semantic<br/>Ranking"]
+    
+    Response["📤 Response Ready"]
+    
+    Reset["🔄 Session Reset<br/>On Exit or Timeout<br/>(Clear Context)"]
+    
+    Input -->|Load session context| SessionMgr
+    SessionMgr -->|Last 5 Q&A pairs| Agent
+    Input -->|Question + context| Agent
+    
+    Agent -->|Decide action| LLM
+    LLM -->|Choose tool or search| Agent
+    
+    Agent -->|Invoke| Tools
+    Tools -->|Result| Agent
+    
+    Agent -->|Search query| Search
+    Search -->|Documents| Agent
+    
+    Agent -->|Generate answer| LLM
+    LLM -->|Synthesize response| Agent
+    Agent -->|Final answer| Response
+    
+    Response -->|Update session| SessionMgr
+    SessionMgr -->|Store conversation| SessionMgr
+    
+    Input -.->|User exits or 15min timeout| Reset
+    Reset -->|Clear all state| SessionMgr
+    
+    style Input fill:#00a4ef
+    style SessionMgr fill:#c0392b
+    style Agent fill:#e74c3c
+    style LLM fill:#9b59b6
+    style Tools fill:#16a085
+    style Search fill:#f39c12
+    style Response fill:#00a4ef
+    style Reset fill:#34495e
 ```
 
-**Agent Loop Details:**
-- **Stateful within Session:** Agent maintains last 5 conversation turns for context
-- **Session Reset:** Automatically resets when user exits or timeout occurs (default: 15 minutes)
-- **Tool Use:** Agent has access to tools (read/write files, access data, summarize content) and decides which to invoke
-- **Context Window:** Each Q&A pair is stored; older entries are evicted when > 5 turns
+**Agent Architecture Details:**
+
+- **Microsoft Agent Framework:** Orchestrates the persistent agent loop; manages state, tool invocation, and decision-making
+- **Azure OpenAI Service (LLM):** GPT-4o model handles:
+  - Understanding user questions
+  - Deciding which tools to invoke
+  - Synthesizing answers from retrieved documents and tool results
+- **Custom Tools:** Customer-built tools that the agent can call:
+  - File operations (read/write documents)
+  - Data source access (databases, APIs)
+  - Content summarization and analysis
+- **Azure AI Search Connection:** Knowledge base connection provides:
+  - Hybrid retrieval (keyword + semantic)
+  - Semantic re-ranking for relevance
+  - Scoped to user permissions via OBO flow
+- **Session State Management:**
+  - Maintains last 5 conversation turns for context awareness
+  - Agent can reference prior questions/answers in current session
+  - Automatically resets when user exits or after 15-minute timeout
+  - Fresh session starts with empty context
 
 ### Telemetry & Logging
 
