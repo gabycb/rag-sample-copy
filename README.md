@@ -97,9 +97,9 @@ graph TB
     LLM -->|Generate answer| Agent
     Agent -->|Surface answer| Input
     
-    style Input fill:##6B8E23
-    style Agent fill:##424242
-    style LLM fill:#5D4037
+    style Input fill:#6B8E23
+    style Agent fill:#F5EDC2
+    style LLM fill:#F7D9D3
     style SessionMgr fill:#C2A878
     style Tools fill:#A3B18A
     style Search fill:#2E3440
