@@ -12,7 +12,7 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
 graph TB
     Teams["👤 MS Teams<br/>(Employee Interface)"]
     BotService["🤖 Azure Bot Service<br/>Routes Messages<br/>Entra ID Auth<br/>OBO Flow"]
-    Container["📦 Azure Container Apps<br/>FastAPI Bot Backend<br/>Message Handler"]
+    Container["📦 Azure App <br/>FastAPI Bot Backend<br/>Message Handler"]
     AIFoundry["🧠 Azure AI Foundry<br/>Persistent Agent<br/>GPT-4o Model<br/>Tool Orchestration"]
     AISearch["🔍 Azure AI Search<br/>Hybrid Retrieval<br/>Semantic Ranking"]
     
@@ -21,7 +21,7 @@ graph TB
     CosmosDB["🗄️ Azure Cosmos DB<br/>Conversation Threads<br/>Session State"]
     Telemetry["📊 Application Insights<br/>Conversation Logs<br/>Thread Telemetry"]
     
-    Teams -->|Question Question 1-4| BotService
+    Teams -->|Question| BotService
     BotService -->|Validate & Route| Container
     Container -->|Invoke Agent| AIFoundry
     AIFoundry -->|Execute Tools| Container
@@ -30,8 +30,8 @@ graph TB
     AISearch -->|Retrieve Files| BlobStorage
     AIFoundry -->|Store Thread| CosmosDB
     Container -->|Log Telemetry| Telemetry
-    AIFoundry -->|Reply| BotService
-    BotService -->|Answer Returns 5-7| Teams
+    Container -->|Reply| BotService
+    BotService -->|Answer Returns| Teams
     CosmosDB -->|Load Context| AIFoundry
     
     style Teams fill:#00a4ef
@@ -42,12 +42,12 @@ graph TB
     style SharePoint fill:#16a085
     style BlobStorage fill:#16a085
     style CosmosDB fill:#c0392b
-    style Telemetry fill:#34495e
+    style Telemetry fill:#d2dce6
 ```
 
 **Key Flows:**
-- **Question Flow (1→4):** Employee asks in Teams → Bot Service routes → Agent invokes with context
-- **Answer Flow (5→7):** Agent synthesizes answer → Bot Service → Teams (user sees response)
+- **Question Flow:** Employee asks in Teams → Bot Service routes → Agent invokes with context
+- **Answer Flow:** Agent synthesizes answer → Bot Service → Teams (user sees response)
 
 | Layer | Technology |
 |---|---|
