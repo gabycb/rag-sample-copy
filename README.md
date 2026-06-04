@@ -42,7 +42,7 @@ graph TB
     style SharePoint fill:#16a085
     style BlobStorage fill:#16a085
     style CosmosDB fill:#c0392b
-    style Telemetry fill:#34495e
+    style Telemetry fill:#d2dce6
 ```
 
 **Key Flows:**
