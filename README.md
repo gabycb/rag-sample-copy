@@ -97,6 +97,7 @@ graph TB
     Search -->|Query Result| LLM
     
     LLM -->|Generate answer| Agent
+    Agent -->|Surface answer| Input
     
     style Input fill:#00a4ef
     style Agent fill:#e74c3c
