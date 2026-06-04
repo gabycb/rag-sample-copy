@@ -21,7 +21,7 @@ graph TB
     CosmosDB["🗄️ Azure Cosmos DB<br/>Conversation Threads<br/>Session State"]
     Telemetry["📊 Application Insights<br/>Conversation Logs<br/>Thread Telemetry"]
     
-    Teams -->|Question Question 1-4| BotService
+    Teams -->|Question| BotService
     BotService -->|Validate & Route| Container
     Container -->|Invoke Agent| AIFoundry
     AIFoundry -->|Execute Tools| Container
@@ -31,7 +31,7 @@ graph TB
     AIFoundry -->|Store Thread| CosmosDB
     Container -->|Log Telemetry| Telemetry
     AIFoundry -->|Reply| BotService
-    BotService -->|Answer Returns 5-7| Teams
+    BotService -->|Answer Returns| Teams
     CosmosDB -->|Load Context| AIFoundry
     
     style Teams fill:#00a4ef
