@@ -47,7 +47,7 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
 
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
-  name: 'text-embedding-ada-002'
+  name: 'text-embedding-3-large'
   dependsOn: [gpt4oDeployment] // Serial deployment to avoid conflicts
   sku: {
     name: 'Standard'
@@ -56,8 +56,8 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   properties: {
     model: {
       format: 'OpenAI'
-      name: 'text-embedding-ada-002'
-      version: '2'
+      name: 'text-embedding-3-large'
+      version: '1'
     }
   }
 }

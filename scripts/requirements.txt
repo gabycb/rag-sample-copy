@@ -1,0 +1,4 @@
+# One-time setup scripts (index creation + sample doc upload).
+azure-identity==1.19.0
+azure-search-documents==11.6.0
+openai==1.54.3
