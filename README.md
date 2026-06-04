@@ -97,12 +97,12 @@ graph TB
     LLM -->|Generate answer| Agent
     Agent -->|Surface answer| Input
     
-    style Input fill:#00a4ef
-    style Agent fill:#e74c3c
-    style LLM fill:#9b59b6
-    style SessionMgr fill:#c0392b
+    style Input fill:#1B365D
+    style Agent fill:#4B5D73
+    style LLM fill:#68798F
+    style SessionMgr fill:#9FAAB8
     style Tools fill:#16a085
-    style Search fill:#f39c12
+    style Search fill:#2E3440
 ```
 
 **Agent Architecture Details:**
