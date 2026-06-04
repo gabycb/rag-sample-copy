@@ -150,7 +150,7 @@ graph TB
     
     AppInsights -->|Dashboards| Dashboard["📈 Analytics<br/>Q&A success rate<br/>Agent latency<br/>Tool usage patterns<br/>User engagement"]
     
-    style Agent fill:#e74c3c
+    style Agent fill:#424242
     style Telemetry fill:#f39c12
     style Log1 fill:#00a4ef
     style Log2 fill:#3498db
