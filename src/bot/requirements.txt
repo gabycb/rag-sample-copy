@@ -4,6 +4,7 @@ botbuilder-core==4.20.0
 botbuilder-integration-aiohttp==4.20.0
 aiohttp==3.9.1
 msal==1.24.1
+httpx==0.27.2
 azure-identity==1.14.0
 azure-ai-projects==0.10.0
 azure-search-documents==11.4.0

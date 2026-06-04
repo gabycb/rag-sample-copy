@@ -1,145 +1,220 @@
 """
-Bot Service Message Handler
+Bot Service message handler.
 
-Handles:
-1. Validating incoming messages from Azure Bot Service (verify credentials)
-2. Extracting and exchanging user identity tokens (OBO flow for SharePoint access)
-3. Sending replies back through Bot Service
+Responsibilities:
+1. Authenticate incoming Activities from Azure Bot Service (real Bot Framework
+   JWT validation — NOT the previous `verify_signature=False` bypass).
+2. Obtain the signed-in user's token (Teams SSO) and exchange it On-Behalf-Of
+   (OBO) for a Microsoft Graph token, then resolve the caller's identity +
+   transitive groups (see graph_client.py) for security trimming.
+3. Run the supplied message pipeline and send the reply back through Bot Service.
+
+`APP_MODE=local` bypasses JWKS validation and uses fake identities so the full
+path is runnable/testable offline. All heavyweight SDKs (botbuilder, msal) are
+imported lazily inside the Azure path so the local/test path needs only httpx.
 """
 
-import os
+import asyncio
 import logging
-import jwt
-from datetime import datetime
-from typing import Optional, Dict, Any
-from msal import ConfidentialClientApplication
-import aiohttp
+from dataclasses import dataclass
+from typing import Any, Awaitable, Callable
+
+from config import get_settings
+from graph_client import CallerIdentity, GraphClient
 
 logger = logging.getLogger(__name__)
 
+# Pipeline callback: (query, caller_identity, conversation_id, user_id) -> reply text
+MessagePipeline = Callable[[str, CallerIdentity, str, str], Awaitable[str]]
+
+_GRAPH_SCOPES = ["https://graph.microsoft.com/.default"]
+_TOKEN_EXCHANGE_INVOKE = "signin/tokenExchange"
+
+
+@dataclass
+class TurnResult:
+    """What the HTTP layer should return for a processed activity."""
+
+    status_code: int = 200
+    body: dict[str, Any] | None = None
+
 
 class BotHandler:
-    """
-    Manages MS Teams bot message handling and Entra ID OBO flow.
+    """Validates Bot Service traffic and drives the OBO + identity-resolution flow."""
 
-    - Validates incoming messages from Azure Bot Service
-    - Exchanges user tokens for SharePoint-scoped tokens (OBO flow)
-    - Sends replies back to Teams through Bot Service
-    """
+    def __init__(self) -> None:
+        self.settings = get_settings()
+        self.graph = GraphClient()
+        self._msal_app = None
+        self._adapter = None
 
-    def __init__(self):
-        """Initialize with Bot Service and Entra ID credentials."""
-        self.bot_app_id = os.getenv("MICROSOFT_APP_ID")
-        self.bot_app_password = os.getenv("MICROSOFT_APP_PASSWORD")
-        self.tenant_id = os.getenv("AZURE_TENANT_ID")
-        self.entra_app_id = os.getenv("ENTRA_APP_CLIENT_ID")
-        self.entra_app_secret = os.getenv("ENTRA_APP_CLIENT_SECRET")
+        if not self.settings.is_local:
+            self._init_azure_clients()
 
-        # MSAL client for OBO token exchange
-        self.msal_app = ConfidentialClientApplication(
-            client_id=self.entra_app_id,
-            client_credential=self.entra_app_secret,
-            authority=f"https://login.microsoftonline.com/{self.tenant_id}",
+    # ------------------------------------------------------------------ setup
+    def _init_azure_clients(self) -> None:
+        """Construct Bot Framework + MSAL clients (Azure mode only)."""
+        from botbuilder.core import CloudAdapter, ConfigurationBotFrameworkAuthentication
+        from msal import ConfidentialClientApplication
+
+        # Bot Framework auth config — MSI-based, so there is no app password.
+        class _BotConfig:
+            APP_ID = self.settings.bot_app_id
+            APP_TYPE = self.settings.bot_app_type
+            APP_TENANTID = self.settings.bot_app_tenant_id
+            APP_PASSWORD = ""  # unused with UserAssignedMSI
+
+        self._adapter = CloudAdapter(ConfigurationBotFrameworkAuthentication(_BotConfig))
+        self._adapter.on_turn_error = self._on_turn_error
+
+        # OBO requires the app's own credential (secret here; a federated managed-identity
+        # credential is the secret-less production alternative — see docs).
+        if self.settings.obo_client_id and self.settings.obo_client_secret:
+            self._msal_app = ConfidentialClientApplication(
+                client_id=self.settings.obo_client_id,
+                client_credential=self.settings.obo_client_secret,
+                authority=f"https://login.microsoftonline.com/{self.settings.tenant_id}",
+            )
+        else:
+            logger.warning("OBO app credentials missing; OBO exchange will be unavailable.")
+
+    async def _on_turn_error(self, turn_context, error: Exception) -> None:
+        logger.error("Unhandled turn error: %s", error, exc_info=True)
+        await turn_context.send_activity(
+            "Sorry, something went wrong handling your message."
         )
 
-    async def validate_auth_header(self, auth_header: str) -> bool:
+    # --------------------------------------------------------------- OBO flow
+    async def exchange_obo(self, user_assertion: str, scopes: list[str]) -> str:
         """
-        Validate Bot Service authorization header.
+        Exchange the user's token for a downstream-scoped token (OBO).
 
-        Bot Service signs all incoming messages with a JWT token. We verify:
-        - Token signature matches Bot Service's public key
-        - Issuer is Microsoft Bot Service
-        - Token is not expired
-        - Audience matches our bot app ID
+        `user_assertion` MUST be a real JWT access token issued for this API
+        (e.g. from a Teams SSO `signin/tokenExchange`), not a directory object id.
         """
-        try:
-            if not auth_header.startswith("Bearer "):
-                return False
+        if self.settings.is_local:
+            # Fake graph token that encodes the user key for the fake directory.
+            return f"local-graph-token:{user_assertion}"
 
-            token = auth_header[7:]  # Remove "Bearer " prefix
+        if self._msal_app is None:
+            raise RuntimeError("OBO client not configured")
 
-            # In production: fetch Microsoft's OpenID config and validate JWT signature
-            # https://login.botframework.com/v1/.well-known/openid-configuration
-            # For now, basic token validation:
-            decoded = jwt.decode(
-                token,
-                options={"verify_signature": False}  # TODO: verify with Microsoft's keys in production
+        # MSAL is synchronous; keep it off the event loop.
+        result = await asyncio.to_thread(
+            self._msal_app.acquire_token_on_behalf_of,
+            user_assertion=user_assertion,
+            scopes=scopes,
+        )
+        if "access_token" not in result:
+            raise RuntimeError(
+                f"OBO exchange failed: {result.get('error_description', result.get('error'))}"
             )
+        return result["access_token"]
 
-            # Check audience and issuer
-            if decoded.get("aud") != self.bot_app_id:
-                logger.warning(f"Token audience mismatch: {decoded.get('aud')}")
-                return False
+    async def resolve_identity(self, user_assertion: str) -> CallerIdentity:
+        """OBO-exchange for a Graph token, then resolve caller identity + groups."""
+        graph_token = await self.exchange_obo(user_assertion, _GRAPH_SCOPES)
+        return await self.graph.get_caller_identity(graph_token)
 
-            if "botframework" not in decoded.get("iss", ""):
-                logger.warning(f"Invalid issuer: {decoded.get('iss')}")
-                return False
+    # ---------------------------------------------------------- request entry
+    async def handle_turn(
+        self, body: dict[str, Any], auth_header: str, pipeline: MessagePipeline
+    ) -> TurnResult:
+        """Authenticate + route a single incoming activity."""
+        if self.settings.is_local:
+            return await self._handle_local(body, pipeline)
+        return await self._handle_azure(body, auth_header, pipeline)
 
-            return True
+    # ------------------------------------------------------------ local path
+    async def _handle_local(
+        self, body: dict[str, Any], pipeline: MessagePipeline
+    ) -> TurnResult:
+        """Offline path: no JWKS validation, fake identities, reply echoed in body."""
+        activity_type = body.get("type")
+        user = body.get("from", {})
+        # The fake "assertion" is just a directory key (e.g. "alice"/"bob").
+        assertion = user.get("aadObjectId") or user.get("id") or "alice"
 
-        except Exception as e:
-            logger.error(f"Auth validation failed: {e}")
-            return False
+        if activity_type == "invoke" and body.get("name") == _TOKEN_EXCHANGE_INVOKE:
+            assertion = body.get("value", {}).get("token", assertion)
+            await self.resolve_identity(assertion)  # warms the identity cache
+            return TurnResult(status_code=200, body={"status": "tokenExchanged"})
 
-    async def get_obo_token(self, activity: Dict[str, Any]) -> str:
-        """
-        Exchange user's Teams token for a SharePoint-scoped token (OBO flow).
+        if activity_type != "message":
+            return TurnResult(status_code=200)
 
-        Process:
-        1. Extract user's token from activity (provided by Bot Service)
-        2. Call token endpoint with user's token + bot credentials
-        3. Receive SharePoint-scoped token
-        4. Return token for AI Search queries
+        text = (body.get("text") or "").strip()
+        if not text:
+            return TurnResult(status_code=200)
 
-        https://learn.microsoft.com/en-us/azure/bot-service/bot-builder-authentication-sso
-        """
-        try:
-            # The user's token is passed in the activity
-            # In the actual implementation, extract it from activity["channelData"]["teamsChannelData"] or similar
-            user_token = activity.get("from", {}).get("aadObjectId")  # Simplified; actual token location varies
+        identity = await self.resolve_identity(assertion)
+        reply = await pipeline(
+            text,
+            identity,
+            body.get("conversation", {}).get("id", "local-convo"),
+            user.get("id", "local-user"),
+        )
+        logger.info("[local] reply to %s: %s", identity.upn or identity.oid, reply[:120])
+        return TurnResult(status_code=200, body={"type": "message", "text": reply})
 
-            if not user_token:
-                logger.warning("No user token in activity")
-                return None
+    # ------------------------------------------------------------ azure path
+    async def _handle_azure(
+        self, body: dict[str, Any], auth_header: str, pipeline: MessagePipeline
+    ) -> TurnResult:
+        """Validated Bot Framework path: replies are sent via TurnContext."""
+        from botbuilder.core import MessageFactory
+        from botbuilder.schema import Activity
 
-            # Use MSAL to exchange user's token for SharePoint-scoped token (OBO flow)
-            result = self.msal_app.acquire_token_on_behalf_of(
-                user_assertion=user_token,
-                scopes=["https://graph.microsoft.com/.default"]  # TODO: adjust for SharePoint scopes
+        activity = Activity().deserialize(body)
+
+        async def logic(turn_context) -> None:
+            assertion = await self._get_user_assertion(turn_context)
+            if not assertion:
+                # No SSO token yet — prompt the user to sign in (starts Teams SSO).
+                await self._send_signin_prompt(turn_context)
+                return
+
+            identity = await self.resolve_identity(assertion)
+
+            if (turn_context.activity.type or "").lower() != "message":
+                return
+            text = (turn_context.activity.text or "").strip()
+            if not text:
+                return
+
+            reply = await pipeline(
+                text,
+                identity,
+                turn_context.activity.conversation.id,
+                turn_context.activity.from_property.id,
             )
+            await turn_context.send_activity(MessageFactory.text(reply))
 
-            if "access_token" in result:
-                return result["access_token"]
-            else:
-                logger.error(f"OBO token exchange failed: {result.get('error_description')}")
-                return None
+        invoke_response = await self._adapter.process_activity(auth_header, activity, logic)
+        if invoke_response is not None:
+            return TurnResult(status_code=invoke_response.status, body=invoke_response.body)
+        return TurnResult(status_code=200)
 
-        except Exception as e:
-            logger.error(f"OBO token exchange error: {e}")
-            return None
-
-    async def send_reply(self, activity: Dict[str, Any], reply_text: str):
+    async def _get_user_assertion(self, turn_context) -> str | None:
         """
-        Send a reply message back to the user through Bot Service.
+        Obtain the user's exchangeable SSO token.
 
-        The reply is sent via the Bot Service's REST API.
+        Completed Teams SSO arrives as a `signin/tokenExchange` invoke whose
+        `value.token` is the user assertion. (A production bot would also try the
+        Bot Framework user-token service for an already-cached token here.)
         """
-        try:
-            # Construct reply activity
-            reply_activity = {
-                "type": "message",
-                "text": reply_text,
-                "conversation": activity.get("conversation"),
-                "from": {
-                    "id": activity.get("recipient", {}).get("id"),
-                    "name": "ATLAS-RAG Bot"
-                },
-                "replyToId": activity.get("id"),
-            }
+        activity = turn_context.activity
+        if (activity.type or "").lower() == "invoke" and activity.name == _TOKEN_EXCHANGE_INVOKE:
+            value = activity.value or {}
+            return value.get("token") if isinstance(value, dict) else getattr(value, "token", None)
+        return None
 
-            # Send reply through Bot Service API
-            # TODO: implement actual send_activity call to Bot Service
-            logger.info(f"Reply sent: {reply_text[:100]}...")
+    async def _send_signin_prompt(self, turn_context) -> None:
+        """Minimal sign-in nudge that triggers the Teams SSO exchange."""
+        from botbuilder.core import MessageFactory
 
-        except Exception as e:
-            logger.error(f"Failed to send reply: {e}")
+        await turn_context.send_activity(
+            MessageFactory.text(
+                "Please sign in so I can search SharePoint content you have access to."
+            )
+        )
