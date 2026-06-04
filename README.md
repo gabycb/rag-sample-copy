@@ -1,38 +1,61 @@
 # ATLAS-RAG SharePoint Agent
 
-An enterprise Retrieval-Augmented Generation (RAG) agent that enables natural-language question-and-answer over SharePoint content. Built on **Azure AI Foundry Agent Service** with GPT-4o, it uses Microsoft Entra ID On-Behalf-Of (OBO) flow to retrieve SharePoint data within the scope of the signed-in user's permissions.
+An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Teams** that enables natural-language question-and-answer over SharePoint content. Built on **Azure Bot Service** for Teams integration and **Azure AI Foundry Agent Service** with GPT-4o, it uses Microsoft Entra ID On-Behalf-Of (OBO) flow to retrieve SharePoint data within the scope of the signed-in user's permissions.
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                     Azure Container Apps                 │
-│                  (FastAPI · Python 3.11)                 │
-└───────────────────────┬─────────────────────────────────┘
-                        │ HTTPS
-          ┌─────────────▼─────────────┐
-          │  Azure AI Foundry         │
-          │  Agent Service            │
-          │  · GPT-4o                 │
-          │  · SharePoint tool        │
-          │  · File Search            │
-          └──┬────────────┬───────────┘
+┌────────────────────────────────────────────────────────────────┐
+│                          MS Teams                              │
+│                    (Employee Interface)                        │
+└────────────────────┬───────────────────────────────────────────┘
+                     │ Question (1-4)
+          ┌──────────▼──────────┐
+          │  Azure Bot Service  │
+          │  · Routes messages  │
+          │  · Entra ID auth    │
+          │  · OBO flow         │
+          └──────────┬──────────┘
+                     │
+          ┌──────────▼──────────────────┐
+          │ Azure Container Apps        │
+          │ Bot Backend (FastAPI)       │
+          └──────────┬──────────────────┘
+                     │
+          ┌──────────▼──────────────────┐
+          │  Azure AI Foundry           │
+          │  Agent Service              │
+          │  · GPT-4o                   │
+          │  · SharePoint tool          │
+          │  · File Search              │
+          └──┬────────────┬─────────────┘
              │            │
-   ┌──────────▼──┐  ┌──────▼──────────┐
-   │ Azure AI    │  │  Azure Cosmos DB │
-   │ Search      │  │  (thread store)  │
-   │ (hybrid +   │  └─────────────────┘
-   │  semantic)  │
-   └─────────────┘
+   ┌─────────▼──┐  ┌──────▼──────────┐
+   │ Azure AI   │  │ Azure Cosmos DB  │
+   │ Search     │  │ (conversation    │
+   │ (hybrid +  │  │  threads)        │
+   │ semantic)  │  └──────────────────┘
+   └────┬───────┘
+        │
+   ┌────▼──────────────────────┐
+   │     SharePoint            │
+   │  (Knowledge Store:         │
+   │   docs, FAQs, etc.)       │
+   └───────────────────────────┘
+
+Answer Returns (5-7, dashed chord back to Teams)
 ```
 
 | Layer | Technology |
 |---|---|
-| **Backend API** | FastAPI on Azure Container Apps |
+| **User Interface** | MS Teams (via Azure Bot Service) |
+| **Bot Service** | Azure Bot Service (message routing, Entra ID authentication) |
+| **Backend API** | FastAPI on Azure Container Apps (bot message handler + AI orchestration) |
 | **AI Agent** | Azure AI Foundry Agent Service (GPT-4o + SharePoint tool + File Search) |
 | **Search** | Azure AI Search — hybrid + semantic re-ranking |
+| **Knowledge Store** | Microsoft SharePoint (documents, FAQs, organizational knowledge) |
 | **Conversation Storage** | Azure Cosmos DB (NoSQL — `threads` & `conversations` containers) |
 | **File Storage** | Azure Blob Storage (`agent-files` container) |
 | **Authentication** | Microsoft Entra ID — On-Behalf-Of (OBO) flow for user-scoped SharePoint access |
@@ -49,9 +72,12 @@ An enterprise Retrieval-Augmented Generation (RAG) agent that enables natural-la
 - [Azure Developer CLI (AZD)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) (latest recommended)
 - [Bicep CLI](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/install) (installed via `az bicep install`)
 - An Azure subscription with Contributor + User Access Administrator roles
-- A Microsoft Entra ID app registration with SharePoint delegated permissions (`Sites.Read.All` or broader)
+- A Microsoft Entra ID app registration for the **Bot Service** (for MS Teams integration)
+- A Microsoft Entra ID app registration with SharePoint delegated permissions (`Sites.Read.All` or broader) for **OBO flow**
+- Access to a Microsoft 365 tenant with **MS Teams** enabled
 - Python 3.11+ (for local development)
 - Docker (for local container builds)
+- [Bot Framework Emulator](https://github.com/Microsoft/BotFramework-Emulator) (for local testing, optional)
 
 ---
 
@@ -96,7 +122,7 @@ The `isProd` flag is derived automatically from whether the environment name con
 
 ```
 fullRAG/
-├── azure.yaml                      # AZD service definitions (api → Container Apps)
+├── azure.yaml                      # AZD service definitions (bot service → Container Apps)
 ├── .env.example                    # Environment variable template for local dev
 ├── AGENTS.md                       # Copilot coding agent instructions
 ├── infra/
@@ -108,21 +134,28 @@ fullRAG/
 │       ├── managed-identity.bicep  # User-Assigned Managed Identity
 │       ├── key-vault.bicep         # Key Vault (RBAC-mode, soft delete)
 │       ├── container-registry.bicep# Azure Container Registry
+│       ├── bot-service.bicep       # Azure Bot Service + Entra ID App Registration
 │       ├── ai-services.bicep       # Azure AI Services (GPT-4o + embeddings)
 │       ├── ai-foundry.bicep        # AI Hub + AI Project + Capability Host
 │       ├── ai-search.bicep         # Azure AI Search (hybrid + semantic)
 │       ├── cosmos-db.bicep         # Cosmos DB — threads & conversations
 │       ├── storage-account.bicep   # Blob Storage for agent files
-│       ├── container-apps.bicep    # Container Apps Environment + app
+│       ├── container-apps.bicep    # Container Apps Environment + bot backend
 │       └── security.bicep          # All RBAC role assignments (centralized)
 └── src/
-    └── api/
-        └── Dockerfile              # Python 3.11 slim, uvicorn on port 8000
+    └── bot/
+        ├── Dockerfile              # Python 3.11 slim, uvicorn on port 8000
+        ├── main.py                 # FastAPI bot service entry point
+        ├── requirements.txt        # Python dependencies (botframework, azure-ai-foundry)
+        ├── bot_handler.py          # MS Teams message routing + Entra ID OBO
+        └── ai_foundry_client.py    # AI Foundry agent orchestration
 ```
 
 ---
 
 ## Local Development
+
+### Setup
 
 1. **Copy and configure the environment file:**
 
@@ -134,26 +167,54 @@ fullRAG/
 2. **Install Python dependencies:**
 
    ```bash
-   cd src/api
+   cd src/bot
    pip install -r requirements.txt
    ```
 
-3. **Run the API locally:**
+3. **Create local Entra ID app registration (if testing locally):**
 
-   ```bash
-   uvicorn main:app --reload --port 8000
-   ```
+   Use [Bot Framework Emulator](https://github.com/Microsoft/BotFramework-Emulator) to test the bot without a Teams connection, or:
+   - Register an app in Entra ID Portal
+   - Set `MICROSOFT_APP_ID` and `MICROSOFT_APP_PASSWORD` in `.env`
 
-   The API will be available at `http://localhost:8000`.
+### Running Locally
 
-4. **Build the container image locally:**
+**Option A: Direct FastAPI (for development)**
 
-   ```bash
-   docker build -t atlas-rag-api ./src/api
-   docker run -p 8000:8000 --env-file .env atlas-rag-api
-   ```
+```bash
+cd src/bot
+uvicorn main:app --reload --port 8000
+# Bot webhook available at http://localhost:8000/api/messages
+```
 
-> **Note:** Load your `.env` file into environment variables before starting the app (e.g., `export $(grep -v '^#' .env | xargs)`). `DefaultAzureCredential` then picks up credentials via its standard chain: environment variables (`AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`), followed by `az login`. In production the Container App authenticates using `ManagedIdentityCredential` via `AZURE_CLIENT_ID`.
+**Option B: Docker (closer to production)**
+
+```bash
+docker build -t atlas-rag-bot ./src/bot
+docker run -p 8000:8000 --env-file .env atlas-rag-bot
+```
+
+**Option C: Bot Framework Emulator (test without Teams)**
+
+1. Launch Bot Framework Emulator
+2. Connect to: `http://localhost:8000/api/messages`
+3. Use `MICROSOFT_APP_ID` and `MICROSOFT_APP_PASSWORD` from `.env`
+4. Send test messages to see the bot respond
+
+### Authentication
+
+- **Local development**: `DefaultAzureCredential` chains through environment variables → `az login` → MSI
+  - Set `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` in `.env` for service principal auth
+  - Or run `az login` and let the code use your credentials
+- **Production**: Container App uses `ManagedIdentityCredential` via injected `AZURE_CLIENT_ID` (no secrets stored)
+
+### MS Teams Integration
+
+To test with actual MS Teams:
+1. Deploy the bot to Azure (via `azd deploy`)
+2. In Azure Bot Service → Channels, enable MS Teams
+3. Add the bot to a Teams channel or personal chat
+4. Send a message → forwarded to the bot's webhook endpoint
 
 ---
 
@@ -185,9 +246,10 @@ All Azure resources are provisioned via Bicep modules orchestrated by `infra/mai
 | Phase | Resources |
 |---|---|
 | **Shared Services** | Log Analytics, Application Insights, User-Assigned Managed Identity, Key Vault, Container Registry |
+| **Bot Integration** | Azure Bot Service, Entra ID App Registration (for Teams + OBO), Key Vault secrets for bot credentials |
 | **AI & Data** | Azure AI Services (GPT-4o + embeddings), AI Foundry Hub + Project, Azure AI Search, Cosmos DB, Blob Storage |
-| **Compute** | Container Apps Environment + Container App (FastAPI) |
-| **Security** | RBAC role assignments (all in `security.bicep`) |
+| **Compute** | Container Apps Environment + Container App (Bot backend, FastAPI) |
+| **Security** | RBAC role assignments (all in `security.bicep`), OBO flow for user-scoped SharePoint access |
 | **Networking (prod)** | Private endpoints for all services, VNet, private DNS zones |
 
 ### Key Design Decisions
