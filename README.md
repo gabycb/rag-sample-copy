@@ -11,7 +11,7 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
 │                          MS Teams                              │
 │                    (Employee Interface)                        │
 └────────────────────┬───────────────────────────────────────────┘
-                     │ Question (1-4)
+                     │ 
           ┌──────────▼──────────┐
           │  Azure Bot Service  │
           │  · Routes messages  │
@@ -45,7 +45,6 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
    │   docs, FAQs, etc.)       │
    └───────────────────────────┘
 
-Answer Returns (5-7, dashed chord back to Teams)
 ```
 
 | Layer | Technology |
