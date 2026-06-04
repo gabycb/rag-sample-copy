@@ -73,51 +73,55 @@ graph TB
 
 ```mermaid
 graph TB
-    Input["📥 Question Received<br/>(from Bot Service)"]
+    Input["📥 Question<br/>(from Bot Service)"]
     
-    SessionMgr["💾 Session State Manager<br/>Last 5 Conversations<br/>(Thread Context)"]
+    SessionMgr["💾 Session State<br/>Last 5 Q&A<br/>Thread Context"]
     
-    Agent["🤖 Microsoft Agent Framework<br/>(Persistent Agent)"]
+    Agent["🤖 Agent Framework<br/>Persistent Loop"]
     
-    LLM["🧠 Azure OpenAI Service<br/>(GPT-4o LLM Model<br/>Tool Decision Engine)"]
+    LLM["🧠 GPT-4o<br/>Decision Engine<br/>Tool/Search/Answer"]
     
-    Tools["🛠️ Custom Tools<br/>(Built by Customer)<br/>- Read/Write Files<br/>- Access Data Sources<br/>- Summarize Content"]
+    Tools["🛠️ Custom Tools<br/>Read/Write Files<br/>Data Access<br/>Summarization"]
     
-    Search["🔍 Azure AI Search<br/>(Knowledge Connection)<br/>Hybrid RAG + Semantic<br/>Ranking"]
+    Search["🔍 AI Search<br/>Hybrid RAG<br/>Semantic Ranking"]
     
-    Reset["🔄 Session Reset<br/>On Exit or Timeout<br/>(Clear Context)"]
-
-    Store["🗄️ Azure Cosmos DB<br/>Conversation Threads<br/>Session State"]
+    Store["🗄️ Cosmos DB<br/>Store Conversation"]
     
-    SessionMgr -->|Last 5 Q&A pairs| Agent
-    Input -->|Question + context| Agent
+    Output["📤 Answer<br/>to User"]
     
-    Agent -->|Create query| LLM
-    LLM -->|Provide Response| Agent
+    Reset["🔄 Reset<br/>Exit/Timeout<br/>Clear Context"]
     
-    Agent -->|Invoke| Tools
+    Input -->|Load context| SessionMgr
+    SessionMgr -->|Last 5 pairs| Agent
+    Input -->|Question| Agent
+    
+    Agent -->|Route to| LLM
+    LLM -->|Decide action| Agent
+    
+    Agent -->|Use tools?| Tools
     Tools -->|Result| Agent
     
-    Agent -->|Pass query| Search
-    Search -->|Answer| Agent
+    Agent -->|Search docs?| Search
+    Search -->|Documents| Agent
     
-    Agent -->|Generate answer| LLM
-    LLM -->|Synthesize response| Agent
-    Agent -->|Final answer| SessionMgr
+    Agent -->|Generate| LLM
+    LLM -->|Response| Agent
     
-    SessionMgr -->|Store conversation| Store
+    Agent -->|Store| Store
+    Agent -->|Reply| Output
     
-    Reset -.->|User exits or 15min timeout| Input
-    Reset -->|Clear all state| SessionMgr
+    Reset -.->|15min timeout| SessionMgr
+    Reset -.->|User exits| SessionMgr
     
     style Input fill:#00a4ef
-    style SessionMgr fill:#c0392b
     style Agent fill:#e74c3c
     style LLM fill:#9b59b6
+    style SessionMgr fill:#c0392b
     style Tools fill:#16a085
     style Search fill:#f39c12
-    style Response fill:#00a4ef
-    style Reset fill:#d2dce6
+    style Store fill:#34495e
+    style Output fill:#27ae60
+    style Reset fill:#95a5a6
 ```
 
 **Agent Architecture Details:**
