@@ -6,47 +6,48 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
 
 ## Architecture
 
-```
-┌────────────────────────────────────────────────────────────────┐
-│                          MS Teams                              │
-│                    (Employee Interface)                        │
-└────────────────────┬───────────────────────────────────────────┘
-                     │ Question (1-4)
-          ┌──────────▼──────────┐
-          │  Azure Bot Service  │
-          │  · Routes messages  │
-          │  · Entra ID auth    │
-          │  · OBO flow         │
-          └──────────┬──────────┘
-                     │
-          ┌──────────▼──────────────────┐
-          │ Azure Container Apps        │
-          │ Bot Backend (FastAPI)       │
-          └──────────┬──────────────────┘
-                     │
-          ┌──────────▼──────────────────┐
-          │  Azure AI Foundry           │
-          │  Agent Service              │
-          │  · GPT-4o                   │
-          │  · SharePoint tool          │
-          │  · File Search              │
-          └──┬────────────┬─────────────┘
-             │            │
-   ┌─────────▼──┐  ┌──────▼──────────┐
-   │ Azure AI   │  │ Azure Cosmos DB  │
-   │ Search     │  │ (conversation    │
-   │ (hybrid +  │  │  threads)        │
-   │ semantic)  │  └──────────────────┘
-   └────┬───────┘
-        │
-   ┌────▼──────────────────────┐
-   │     SharePoint            │
-   │  (Knowledge Store:         │
-   │   docs, FAQs, etc.)       │
-   └───────────────────────────┘
+### Full System Architecture
 
-Answer Returns (5-7, dashed chord back to Teams)
+```mermaid
+graph TB
+    Teams["👤 MS Teams<br/>(Employee Interface)"]
+    BotService["🤖 Azure Bot Service<br/>Routes Messages<br/>Entra ID Auth<br/>OBO Flow"]
+    Container["📦 Azure Container Apps<br/>FastAPI Bot Backend<br/>Message Handler"]
+    AIFoundry["🧠 Azure AI Foundry<br/>Persistent Agent<br/>GPT-4o Model<br/>Tool Orchestration"]
+    AISearch["🔍 Azure AI Search<br/>Hybrid Retrieval<br/>Semantic Ranking"]
+    
+    SharePoint["📄 SharePoint<br/>(Knowledge Store)<br/>Docs & FAQs"]
+    BlobStorage["💾 Azure Blob Storage<br/>(Knowledge Store)<br/>Documents & Files"]
+    CosmosDB["🗄️ Azure Cosmos DB<br/>Conversation Threads<br/>Session State"]
+    Telemetry["📊 Application Insights<br/>Conversation Logs<br/>Thread Telemetry"]
+    
+    Teams -->|Question Question 1-4| BotService
+    BotService -->|Validate & Route| Container
+    Container -->|Invoke Agent| AIFoundry
+    AIFoundry -->|Execute Tools| Container
+    AIFoundry -->|Hybrid Search| AISearch
+    AISearch -->|Retrieve Docs| SharePoint
+    AISearch -->|Retrieve Files| BlobStorage
+    AIFoundry -->|Store Thread| CosmosDB
+    Container -->|Log Telemetry| Telemetry
+    AIFoundry -->|Reply| BotService
+    BotService -->|Answer Returns 5-7| Teams
+    CosmosDB -->|Load Context| AIFoundry
+    
+    style Teams fill:#00a4ef
+    style BotService fill:#4a90e2
+    style Container fill:#f39c12
+    style AIFoundry fill:#e74c3c
+    style AISearch fill:#9b59b6
+    style SharePoint fill:#16a085
+    style BlobStorage fill:#16a085
+    style CosmosDB fill:#c0392b
+    style Telemetry fill:#34495e
 ```
+
+**Key Flows:**
+- **Question Flow (1→4):** Employee asks in Teams → Bot Service routes → Agent invokes with context
+- **Answer Flow (5→7):** Agent synthesizes answer → Bot Service → Teams (user sees response)
 
 | Layer | Technology |
 |---|---|
@@ -63,6 +64,93 @@ Answer Returns (5-7, dashed chord back to Teams)
 | **Secrets** | Azure Key Vault |
 | **Observability** | Azure Application Insights + Log Analytics |
 | **Infrastructure as Code** | Azure Developer CLI (AZD) + Bicep |
+
+---
+
+## Agent Behavior & Loop
+
+### Agent Execution Loop
+
+```mermaid
+graph LR
+    A["📥 Receive Question<br/>from User in Teams"] -->|Extract text & context| B["⚡ Optimize Query<br/>Rewrite for search<br/>Add session context"]
+    B -->|Last 5 conversations| C["🔎 Run Search<br/>Hybrid RAG Retrieval<br/>Semantic Re-ranking"]
+    C -->|Retrieved docs| D["🧠 Agent Thinks<br/>Synthesize answer<br/>Decide next action"]
+    D -->|Decision point| E{Check if<br/>tool needed}
+    E -->|Yes| F["🛠️ Tool Invocation<br/>read/write files<br/>access data sources<br/>summarize info"]
+    F -->|Result as context| D
+    E -->|No| G["📤 Return Answer<br/>to User in Teams"]
+    
+    H["💾 Session State<br/>Last 5 Q&A pairs<br/>Agent memory"]
+    H -.->|Load on new Q| B
+    H -.->|Update after A| A
+    
+    I["🚪 User Exits Session<br/>or Timeout"] -->|Reset state| J["🔄 Reset<br/>Clear conversation<br/>history & context"]
+    J -->|Fresh session| A
+    
+    style A fill:#00a4ef
+    style B fill:#f39c12
+    style C fill:#9b59b6
+    style D fill:#e74c3c
+    style E fill:#e67e22
+    style F fill:#16a085
+    style G fill:#00a4ef
+    style H fill:#c0392b
+    style I fill:#95a5a6
+    style J fill:#34495e
+```
+
+**Agent Loop Details:**
+- **Stateful within Session:** Agent maintains last 5 conversation turns for context
+- **Session Reset:** Automatically resets when user exits or timeout occurs (default: 15 minutes)
+- **Tool Use:** Agent has access to tools (read/write files, access data, summarize content) and decides which to invoke
+- **Context Window:** Each Q&A pair is stored; older entries are evicted when > 5 turns
+
+### Telemetry & Logging
+
+```mermaid
+graph TB
+    Agent["🧠 Agent Processes Query<br/>Runs Tools<br/>Synthesizes Answer"]
+    
+    Telemetry["📊 Telemetry Pipeline"]
+    
+    Agent -->|Every interaction| Log1["📋 Conversation Log<br/>- Question text<br/>- Retrieved documents<br/>- Agent response<br/>- Tokens used<br/>- Latency"]
+    
+    Agent -->|Thread lifecycle| Log2["🔗 Thread Identifier Log<br/>- Thread ID<br/>- User ID<br/>- Session start time<br/>- Session end time<br/>- Total turns"]
+    
+    Agent -->|Tool invocations| Log3["🛠️ Tool Usage Log<br/>- Tool name<br/>- Parameters<br/>- Result summary<br/>- Execution time"]
+    
+    Agent -->|Search operations| Log4["🔍 Search Log<br/>- Query text<br/>- Results count<br/>- Top scores<br/>- Re-ranking applied"]
+    
+    Log1 & Log2 & Log3 & Log4 --> Telemetry
+    
+    Telemetry -->|Separate database| AppInsights["🗄️ Application Insights<br/>Query Analytics<br/>Performance Metrics<br/>Error Tracking<br/>User Behavior"]
+    
+    Telemetry -->|Audit trail| CosmosDB["🗄️ Cosmos DB<br/>Conversation threads<br/>Session history<br/>Conversation containers"]
+    
+    AppInsights -->|Dashboards| Dashboard["📈 Analytics<br/>Q&A success rate<br/>Agent latency<br/>Tool usage patterns<br/>User engagement"]
+    
+    style Agent fill:#e74c3c
+    style Telemetry fill:#f39c12
+    style Log1 fill:#00a4ef
+    style Log2 fill:#3498db
+    style Log3 fill:#16a085
+    style Log4 fill:#9b59b6
+    style AppInsights fill:#34495e
+    style CosmosDB fill:#c0392b
+    style Dashboard fill:#27ae60
+```
+
+**Telemetry Details:**
+- **Logging Scope:** Every conversation turn and thread identifier is logged
+- **Separate Database:** All telemetry is stored in **Application Insights** for analytics & monitoring
+- **Audit Trail:** Conversation history also stored in **Cosmos DB** for compliance & user support
+- **Metrics Tracked:**
+  - Agent response latency
+  - Search quality (hit rate, result relevance)
+  - Tool invocation frequency & success rate
+  - User engagement patterns
+  - Error rates & failure modes
 
 ---
 
