@@ -38,11 +38,5 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
 
 // Outputs
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
-output logAnalyticsCustomerId string = logAnalyticsWorkspace.properties.customerId
-
-@description('Log Analytics shared key — used by Container Apps Environment for log ingestion')
-#disable-next-line outputs-should-not-contain-secrets
-output logAnalyticsSharedKey string = logAnalyticsWorkspace.listKeys().primarySharedKey
 output appInsightsId string = applicationInsights.id
 output appInsightsConnectionString string = applicationInsights.properties.ConnectionString
-output appInsightsInstrumentationKey string = applicationInsights.properties.InstrumentationKey

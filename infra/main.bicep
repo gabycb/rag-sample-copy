@@ -79,7 +79,6 @@ module containerRegistry 'modules/container-registry.bicep' = {
     prefix: prefix
     resourceToken: resourceToken
     tags: tags
-    isProd: isProd
   }
 }
 
@@ -154,10 +153,10 @@ module aiFoundry 'modules/ai-foundry.bicep' = {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4 — Compute
+// Phase 4 — Compute (FastAPI on App Service + Azure Bot Service)
 // ---------------------------------------------------------------------------
-module containerApps 'modules/container-apps.bicep' = {
-  name: 'container-apps'
+module appService 'modules/app-service.bicep' = {
+  name: 'app-service'
   scope: rg
   params: {
     location: location
@@ -167,14 +166,26 @@ module containerApps 'modules/container-apps.bicep' = {
     isProd: isProd
     identityId: identity.outputs.identityId
     identityClientId: identity.outputs.identityClientId
-    containerRegistryLoginServer: containerRegistry.outputs.containerRegistryLoginServer
-    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
-    logAnalyticsCustomerId: monitoring.outputs.logAnalyticsCustomerId
-    logAnalyticsSharedKey: monitoring.outputs.logAnalyticsSharedKey
     cosmosEndpoint: cosmosDb.outputs.cosmosEndpoint
     searchEndpoint: aiSearch.outputs.searchServiceEndpoint
     aiProjectEndpoint: aiFoundry.outputs.aiProjectEndpoint
     keyVaultUri: keyVault.outputs.keyVaultUri
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
+  }
+}
+
+module botService 'modules/bot-service.bicep' = {
+  name: 'bot-service'
+  scope: rg
+  params: {
+    prefix: prefix
+    resourceToken: resourceToken
+    tags: tags
+    isProd: isProd
+    identityClientId: identity.outputs.identityClientId
+    identityResourceId: identity.outputs.identityId
+    tenantId: subscription().tenantId
+    messagingEndpoint: appService.outputs.appServiceMessagingEndpoint
   }
 }
 
@@ -209,4 +220,5 @@ output AZURE_COSMOS_ENDPOINT string = cosmosDb.outputs.cosmosEndpoint
 output AZURE_SEARCH_ENDPOINT string = aiSearch.outputs.searchServiceEndpoint
 output AZURE_AI_PROJECT_ENDPOINT string = aiFoundry.outputs.aiProjectEndpoint
 output AZURE_AI_SERVICES_ENDPOINT string = aiServices.outputs.aiServicesEndpoint
-output API_URL string = containerApps.outputs.apiUrl
+output APP_SERVICE_URL string = appService.outputs.appServiceUrl
+output BOT_SERVICE_NAME string = botService.outputs.botServiceName

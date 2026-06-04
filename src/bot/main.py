@@ -39,8 +39,22 @@ ai_client = AIFoundryClient()
 
 @app.get("/health")
 async def health():
-    """Health check endpoint for Azure Container Apps."""
+    """Liveness probe — the process is up."""
     return {"status": "healthy"}
+
+
+@app.get("/ready")
+async def ready():
+    """
+    Readiness probe — the app has constructed its handler/clients and can serve traffic.
+
+    Kept separate from /health so an unready (still-initializing or mis-configured)
+    instance is taken out of rotation without being killed by the liveness probe.
+    """
+    initialized = bot_handler is not None and ai_client is not None
+    if not initialized:
+        return JSONResponse(status_code=503, content={"status": "not-ready"})
+    return {"status": "ready"}
 
 
 @app.post("/api/messages")

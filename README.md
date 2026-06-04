@@ -20,7 +20,7 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
           └──────────┬──────────┘
                      │
           ┌──────────▼──────────────────┐
-          │ Azure Container Apps        │
+          │ Azure App Service           │
           │ Bot Backend (FastAPI)       │
           └──────────┬──────────────────┘
                      │
@@ -52,7 +52,7 @@ Answer Returns (5-7, dashed chord back to Teams)
 |---|---|
 | **User Interface** | MS Teams (via Azure Bot Service) |
 | **Bot Service** | Azure Bot Service (message routing, Entra ID authentication) |
-| **Backend API** | FastAPI on Azure Container Apps (bot message handler + AI orchestration) |
+| **Backend API** | FastAPI on Azure App Service (uvicorn — bot message handler + AI orchestration) |
 | **AI Agent** | Azure AI Foundry Agent Service (GPT-4o + SharePoint tool + File Search) |
 | **Search** | Azure AI Search — hybrid + semantic re-ranking |
 | **Knowledge Store** | Microsoft SharePoint (documents, FAQs, organizational knowledge) |
@@ -122,7 +122,7 @@ The `isProd` flag is derived automatically from whether the environment name con
 
 ```
 fullRAG/
-├── azure.yaml                      # AZD service definitions (bot service → Container Apps)
+├── azure.yaml                      # AZD service definitions (bot service → App Service)
 ├── .env.example                    # Environment variable template for local dev
 ├── AGENTS.md                       # Copilot coding agent instructions
 ├── infra/
@@ -134,13 +134,13 @@ fullRAG/
 │       ├── managed-identity.bicep  # User-Assigned Managed Identity
 │       ├── key-vault.bicep         # Key Vault (RBAC-mode, soft delete)
 │       ├── container-registry.bicep# Azure Container Registry
-│       ├── bot-service.bicep       # Azure Bot Service + Entra ID App Registration
+│       ├── bot-service.bicep       # Azure Bot Service (User-Assigned MSI auth — no secret)
 │       ├── ai-services.bicep       # Azure AI Services (GPT-4o + embeddings)
 │       ├── ai-foundry.bicep        # AI Hub + AI Project + Capability Host
 │       ├── ai-search.bicep         # Azure AI Search (hybrid + semantic)
 │       ├── cosmos-db.bicep         # Cosmos DB — threads & conversations
 │       ├── storage-account.bicep   # Blob Storage for agent files
-│       ├── container-apps.bicep    # Container Apps Environment + bot backend
+│       ├── app-service.bicep       # App Service (Linux) running the FastAPI bot via uvicorn
 │       └── security.bicep          # All RBAC role assignments (centralized)
 └── src/
     └── bot/
@@ -206,7 +206,7 @@ docker run -p 8000:8000 --env-file .env atlas-rag-bot
 - **Local development**: `DefaultAzureCredential` chains through environment variables → `az login` → MSI
   - Set `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID` in `.env` for service principal auth
   - Or run `az login` and let the code use your credentials
-- **Production**: Container App uses `ManagedIdentityCredential` via injected `AZURE_CLIENT_ID` (no secrets stored)
+- **Azure**: the App Service uses `DefaultAzureCredential(managed_identity_client_id=AZURE_CLIENT_ID)` — the User-Assigned Managed Identity, no secrets stored
 
 ### MS Teams Integration
 
@@ -235,7 +235,7 @@ To test with actual MS Teams:
 | `ENTRA_APP_CLIENT_ID` | Entra ID app registration client ID |
 | `SHAREPOINT_SITE_URL` | SharePoint site URL to query |
 
-All secrets (`AZURE_CLIENT_SECRET`, `APPLICATIONINSIGHTS_CONNECTION_STRING`, etc.) are stored in **Azure Key Vault**. In production, the Container App injects them at runtime via Key Vault references using the Managed Identity — they are never hard-coded or stored as plain-text environment variables in production deployments.
+Service-to-service auth is **identity-based** (User-Assigned Managed Identity) — there are no connection strings or keys in code or app settings. The Azure Bot Service also uses MSI-based auth (`UserAssignedMSI`), so there is **no bot app password** to store. Any remaining secrets (e.g. an OBO client secret for local dev) belong in **Azure Key Vault** and are referenced via the Managed Identity — never hard-coded.
 
 ---
 
@@ -246,15 +246,16 @@ All Azure resources are provisioned via Bicep modules orchestrated by `infra/mai
 | Phase | Resources |
 |---|---|
 | **Shared Services** | Log Analytics, Application Insights, User-Assigned Managed Identity, Key Vault, Container Registry |
-| **Bot Integration** | Azure Bot Service, Entra ID App Registration (for Teams + OBO), Key Vault secrets for bot credentials |
+| **Bot Integration** | Azure Bot Service (User-Assigned MSI auth — no secret), MS Teams channel |
 | **AI & Data** | Azure AI Services (GPT-4o + embeddings), AI Foundry Hub + Project, Azure AI Search, Cosmos DB, Blob Storage |
-| **Compute** | Container Apps Environment + Container App (Bot backend, FastAPI) |
+| **Compute** | Azure App Service (Linux) running the FastAPI bot via uvicorn |
 | **Security** | RBAC role assignments (all in `security.bicep`), OBO flow for user-scoped SharePoint access |
-| **Networking (prod)** | Private endpoints for all services, VNet, private DNS zones |
+
+> Production networking (private endpoints, VNet, private DNS) is intentionally out of scope for this sample — see the deployment notes.
 
 ### Key Design Decisions
 
-- **User-Assigned Managed Identity** — one identity for the Container App to authenticate to all backends; RBAC is pre-assigned before deployment.
+- **User-Assigned Managed Identity** — one identity for the App Service (and the Bot Service) to authenticate to all backends; RBAC is pre-assigned before deployment.
 - **RBAC centralized in `security.bicep`** — all role assignments in one place for auditability.
 - **Cosmos DB serverless** (dev) / **autoscale** (prod) — cost-optimized for dev, predictable throughput for prod.
 - **AI Search free tier** (dev) / **Standard** (prod) — sufficient for development, standard for hybrid + semantic ranking at scale.

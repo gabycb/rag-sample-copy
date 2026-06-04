@@ -7,6 +7,6 @@ services:
   bot:
     project: ./src/bot
     language: python
-    host: containerapp
-    docker:
-      path: ./src/bot/Dockerfile
+    # The bot runs as a plain FastAPI app (uvicorn) on Azure App Service,
+    # not on Azure Container Apps. azd zip-deploys the source and Oryx builds it.
+    host: appservice

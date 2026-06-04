@@ -10,7 +10,6 @@ param prefix string
 @minLength(1)
 param resourceToken string
 param tags object
-param isProd bool
 
 // ACR names must be alphanumeric only, 5-50 chars
 // 'cr' prefix (2 chars) + prefix + resourceToken guarantees min length >= 5
@@ -21,7 +20,9 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' =
   location: location
   tags: tags
   sku: {
-    name: isProd ? 'Premium' : 'Premium' // Premium required by AI Hub managed network
+    // Premium is required by the AI Foundry Hub managed network (used by ai-foundry.bicep),
+    // not by the app host. The app now runs on App Service and does not pull from ACR.
+    name: 'Premium'
   }
   properties: {
     adminUserEnabled: false
