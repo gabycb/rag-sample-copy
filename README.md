@@ -84,9 +84,7 @@ graph TB
     Tools["🛠️ Custom Tools<br/>Read/Write Files<br/>Data Access"]
     
     Search["🔍 AI Search<br/>Hybrid RAG<br/>Semantic Ranking"]
-    
-    Output["📤 Answer<br/>to User"]
-    
+        
     Input -->|Question| Agent
     Input -.->|Load context| SessionMgr
     SessionMgr -->|Last 5 threads| Agent
