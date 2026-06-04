@@ -79,39 +79,24 @@ graph TB
     
     Agent["🤖 Agent Framework<br/>Persistent Loop"]
     
-    LLM["🧠 GPT-4o<br/>Decision Engine<br/>Tool/Search/Answer"]
+    LLM["🧠 GPT-4o<br/>Decision Engine"]
     
-    Tools["🛠️ Custom Tools<br/>Read/Write Files<br/>Data Access<br/>Summarization"]
+    Tools["🛠️ Custom Tools<br/>Read/Write Files<br/>Data Access"]
     
     Search["🔍 AI Search<br/>Hybrid RAG<br/>Semantic Ranking"]
     
-    Store["🗄️ Cosmos DB<br/>Store Conversation"]
-    
     Output["📤 Answer<br/>to User"]
     
-    Reset["🔄 Reset<br/>Exit/Timeout<br/>Clear Context"]
-    
-    Input -->|Load context| SessionMgr
-    SessionMgr -->|Last 5 pairs| Agent
     Input -->|Question| Agent
+    Input -.->|Load context| SessionMgr
+    SessionMgr -->|Last 5 pairs| Agent
     
-    Agent -->|Route to| LLM
-    LLM -->|Decide action| Agent
-    
-    Agent -->|Use tools?| Tools
-    Tools -->|Result| Agent
-    
-    Agent -->|Search docs?| Search
+    Agent -->|Create query| LLM
+    LLM -->|Query| Tools
+    Tools -->|Connect| Search
     Search -->|Documents| Agent
     
-    Agent -->|Generate| LLM
-    LLM -->|Response| Agent
-    
-    Agent -->|Store| Store
-    Agent -->|Reply| Output
-    
-    Reset -.->|15min timeout| SessionMgr
-    Reset -.->|User exits| SessionMgr
+    Agent -->|Generate answer| Output
     
     style Input fill:#00a4ef
     style Agent fill:#e74c3c
@@ -119,9 +104,7 @@ graph TB
     style SessionMgr fill:#c0392b
     style Tools fill:#16a085
     style Search fill:#f39c12
-    style Store fill:#34495e
     style Output fill:#27ae60
-    style Reset fill:#95a5a6
 ```
 
 **Agent Architecture Details:**
