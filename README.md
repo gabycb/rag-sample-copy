@@ -89,14 +89,14 @@ graph TB
     
     Input -->|Question| Agent
     Input -.->|Load context| SessionMgr
-    SessionMgr -->|Last 5 pairs| Agent
+    SessionMgr -->|Last 5 threads| Agent
     
-    Agent -->|Create query| LLM
-    LLM -->|Query| Tools
+    Agent -->|Pass Input| LLM
+    LLM -->|Create Query| Tools
     Tools -->|Connect| Search
     Search -->|Query Result| LLM
     
-    Agent -->|Generate answer| Output
+    LLM -->|Generate answer| Agent
     
     style Input fill:#00a4ef
     style Agent fill:#e74c3c
