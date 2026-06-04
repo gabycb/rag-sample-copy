@@ -101,7 +101,7 @@ graph TB
     style Agent fill:#F5EDC2
     style LLM fill:#F7D9D3
     style SessionMgr fill:#C2A878
-    style Tools fill:#6B2737
+    style Tools fill:#6B2737m color:#FFFFFF
     style Search fill:#B08D2F
 ```
 
