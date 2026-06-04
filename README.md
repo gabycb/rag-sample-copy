@@ -103,7 +103,6 @@ graph TB
     style SessionMgr fill:#c0392b
     style Tools fill:#16a085
     style Search fill:#f39c12
-    style Output fill:#27ae60
 ```
 
 **Agent Architecture Details:**
