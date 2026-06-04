@@ -85,31 +85,29 @@ graph TB
     
     Search["🔍 Azure AI Search<br/>(Knowledge Connection)<br/>Hybrid RAG + Semantic<br/>Ranking"]
     
-    Response["📤 Response Ready"]
-    
     Reset["🔄 Session Reset<br/>On Exit or Timeout<br/>(Clear Context)"]
+
+    Store["🗄️ Azure Cosmos DB<br/>Conversation Threads<br/>Session State"]
     
-    Input -->|Load session context| SessionMgr
     SessionMgr -->|Last 5 Q&A pairs| Agent
     Input -->|Question + context| Agent
     
-    Agent -->|Decide action| LLM
-    LLM -->|Choose tool or search| Agent
+    Agent -->|Create query| LLM
+    LLM -->|Provide Response| Agent
     
     Agent -->|Invoke| Tools
     Tools -->|Result| Agent
     
-    Agent -->|Search query| Search
-    Search -->|Documents| Agent
+    Agent -->|Pass query| Search
+    Search -->|Answer| Agent
     
     Agent -->|Generate answer| LLM
     LLM -->|Synthesize response| Agent
-    Agent -->|Final answer| Response
+    Agent -->|Final answer| SessionMgr
     
-    Response -->|Update session| SessionMgr
-    SessionMgr -->|Store conversation| SessionMgr
+    SessionMgr -->|Store conversation| Store
     
-    Input -.->|User exits or 15min timeout| Reset
+    Reset -.->|User exits or 15min timeout| Input
     Reset -->|Clear all state| SessionMgr
     
     style Input fill:#00a4ef
@@ -119,7 +117,7 @@ graph TB
     style Tools fill:#16a085
     style Search fill:#f39c12
     style Response fill:#00a4ef
-    style Reset fill:#34495e
+    style Reset fill:#d2dce6
 ```
 
 **Agent Architecture Details:**
