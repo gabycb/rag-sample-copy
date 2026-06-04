@@ -12,7 +12,7 @@ An enterprise Retrieval-Augmented Generation (RAG) agent accessible via **MS Tea
 graph TB
     Teams["👤 MS Teams<br/>(Employee Interface)"]
     BotService["🤖 Azure Bot Service<br/>Routes Messages<br/>Entra ID Auth<br/>OBO Flow"]
-    Container["📦 Azure Container Apps<br/>FastAPI Bot Backend<br/>Message Handler"]
+    Container["📦 Azure App <br/>FastAPI Bot Backend<br/>Message Handler"]
     AIFoundry["🧠 Azure AI Foundry<br/>Persistent Agent<br/>GPT-4o Model<br/>Tool Orchestration"]
     AISearch["🔍 Azure AI Search<br/>Hybrid Retrieval<br/>Semantic Ranking"]
     
@@ -30,7 +30,7 @@ graph TB
     AISearch -->|Retrieve Files| BlobStorage
     AIFoundry -->|Store Thread| CosmosDB
     Container -->|Log Telemetry| Telemetry
-    AIFoundry -->|Reply| BotService
+    Container -->|Reply| BotService
     BotService -->|Answer Returns| Teams
     CosmosDB -->|Load Context| AIFoundry
     
