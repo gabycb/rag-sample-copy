@@ -46,8 +46,8 @@ graph TB
 ```
 
 **Key Flows:**
-- **Question Flow (1→4):** Employee asks in Teams → Bot Service routes → Agent invokes with context
-- **Answer Flow (5→7):** Agent synthesizes answer → Bot Service → Teams (user sees response)
+- **Question Flow:** Employee asks in Teams → Bot Service routes → Agent invokes with context
+- **Answer Flow:** Agent synthesizes answer → Bot Service → Teams (user sees response)
 
 | Layer | Technology |
 |---|---|
