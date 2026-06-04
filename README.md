@@ -94,7 +94,7 @@ graph TB
     Agent -->|Create query| LLM
     LLM -->|Query| Tools
     Tools -->|Connect| Search
-    Search -->|Documents| Agent
+    Search -->|Query Result| LLM
     
     Agent -->|Generate answer| Output
     
