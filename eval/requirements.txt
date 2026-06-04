@@ -1,0 +1,3 @@
+# Evaluation harness (real mode). --dry-run needs none of these.
+azure-ai-evaluation==1.0.0
+azure-identity==1.19.0

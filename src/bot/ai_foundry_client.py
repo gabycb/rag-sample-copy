@@ -14,6 +14,7 @@ from the (trimmed) retrieved sample docs, so the whole flow runs offline.
 import logging
 
 from config import get_settings
+from content_safety import ContentSafetyGuard
 from conversation_store import ConversationStore
 from graph_client import CallerIdentity
 from search_client import SearchResult, SearchService, build_security_filter  # noqa: F401 (re-export)
@@ -21,6 +22,7 @@ from search_client import SearchResult, SearchService, build_security_filter  # 
 logger = logging.getLogger(__name__)
 
 _NO_ANSWER = "I don't have information you have access to about this."
+_BLOCKED = "I can't help with that request."
 
 _SYSTEM_INSTRUCTIONS = (
     "You are ATLAS-RAG, an enterprise assistant. Answer ONLY from the provided "
@@ -36,6 +38,7 @@ class AIFoundryClient:
         self.settings = get_settings()
         self.search = SearchService()
         self.store = ConversationStore()
+        self.guard = ContentSafetyGuard()
         self._project = None  # lazily constructed azure.ai.projects.aio.AIProjectClient
 
     async def query_agent(
@@ -48,17 +51,24 @@ class AIFoundryClient:
         # 1. Retrieve (always security-trimmed to the caller).
         results = await self.search.search(query, caller_identity, top=5)
 
-        # 2. Durable thread for this Teams conversation.
+        # 2. Prompt Shields: check the user prompt AND the (attacker-influenceable)
+        #    retrieved documents for injection before they reach the model.
+        shield = await self.guard.check_input(query, [r.content for r in results])
+        if shield.blocked:
+            logger.warning("Blocked by content safety: %s", shield.reason)
+            return _BLOCKED
+
+        # 3. Durable thread for this Teams conversation.
         thread_id = await self.store.get_thread_id(conversation_id, user_id)
 
-        # 3. Generate the answer.
+        # 4. Generate the answer.
         if self.settings.is_local:
             thread_id = thread_id or f"local-thread-{conversation_id}"
             answer = self._synthesize_local(query, results)
         else:
             thread_id, answer = await self._run_foundry_agent(query, results, thread_id)
 
-        # 4. Persist.
+        # 5. Persist.
         await self.store.save_thread_id(conversation_id, user_id, thread_id)
         await self.store.append_turn(thread_id, user_id, query, answer)
         return answer
